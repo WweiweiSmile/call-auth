@@ -1,0 +1,9 @@
+# 私钥绝不进仓库
+keys/
+*.pem
+
+.env
+/bin/
+/tmp/
+.DS_Store
+.idea/
