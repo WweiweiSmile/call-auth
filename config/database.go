@@ -62,7 +62,12 @@ func InitDB() error {
 // 做 AutoMigrate 会互相覆盖列定义 —— 谁启动得晚，谁的模型就是"对的"，
 // 而另一边的字段会被悄悄改掉
 func Migrate() error {
-	if err := DB.AutoMigrate(&models.RefreshToken{}); err != nil {
+	// 认证中心**自己的**表。users 不在这里 —— 那张表归 call-back 管
+	if err := DB.AutoMigrate(
+		&models.RefreshToken{},
+		&models.SSOClient{},
+		&models.SSOTicket{},
+	); err != nil {
 		return fmt.Errorf("建表失败: %w", err)
 	}
 
@@ -75,6 +80,45 @@ func Migrate() error {
 			AppConfig.DBName)
 	}
 
+	seedSSOClients()
+
 	log.Println("数据表检查通过")
 	return nil
+}
+
+// seedSSOClients 同步应用注册表。
+//
+// 与 call-back 的 seedLeakTags 同一套做法：启动时补齐 / 更新内容，但**不动
+// is_active** —— 手动停用过的 client 不能被启动逻辑重新打开，否则"临时禁用某个
+// 应用"就做不到了。
+//
+// 注意回调地址会被这里覆盖回默认值：改地址要改 `models.DefaultSSOClients` 并重启，
+// 直接在数据库里改会在下次启动时被冲掉
+func seedSSOClients() {
+	created, updated := 0, 0
+
+	for i := range models.DefaultSSOClients {
+		seed := models.DefaultSSOClients[i]
+
+		var existing models.SSOClient
+		err := DB.Where("client_id = ?", seed.ClientID).First(&existing).Error
+		if err != nil {
+			if err := DB.Create(&seed).Error; err != nil {
+				log.Printf("Warning: 写入 SSO client %s 失败: %v", seed.ClientID, err)
+				continue
+			}
+			created++
+			continue
+		}
+
+		existing.Name = seed.Name
+		existing.RedirectURIs = seed.RedirectURIs
+		if err := DB.Save(&existing).Error; err != nil {
+			log.Printf("Warning: 更新 SSO client %s 失败: %v", seed.ClientID, err)
+			continue
+		}
+		updated++
+	}
+
+	log.Printf("SSO clients 同步完成：新建 %d，更新 %d", created, updated)
 }

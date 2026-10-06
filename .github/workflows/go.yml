@@ -1,0 +1,78 @@
+# 认证中心 call-auth 的构建与部署。
+#
+# 结构照搬 call-back 的 .github/workflows/go.yml：编译 → scp 到服务器 →
+# ssh 重启 systemd 服务，用同一套 secrets 名字。
+#
+# **刻意不跑 test / vet / gofmt**：GitHub Actions 的分钟数有限，这一条流水线
+# 只负责"把编出来的东西送上线"。代价要知道：这样只能证明**编译通过**，
+# 证明不了行为正确。而认证中心持签名私钥、是身份的签发方，一个行为错的版本
+# 推上去会让全站登录不可用 —— 所以合并到 main 前，本地至少要跑一次
+# `go vet ./... && go test ./...`（两条命令，几秒钟）。
+# 哪天想加回来：它们是同一个 job 里的额外 step，不额外消耗 job 数。
+#
+# ⚠️ 部署那几步依赖三个仓库 secrets，名字与 call-back 相同：
+#      SERVER_HOST / SERVER_USERNAME / SERVER_PASSWORD
+#    首次启用前确认 call-auth 这个仓库（或它所在的 org）能读到它们。
+#
+# ⚠️ 下面 target 和 systemctl 的两处值是按 call-back 的写法平移过来的，
+#    上线前请核对服务器上的实际情况（目录名、服务名）。
+
+name: Go
+
+# 只监听 main 上的 push。
+#
+# 没有加 pull_request：这条流水线不跑测试，PR 上编一次什么都验证不了，
+# 只是白烧分钟数。要加的话补一个 pull_request 块即可，但记得同时给
+# 部署那两步加 `if: github.event_name == 'push'` —— 否则 PR 也会触发部署
+#（call-back 现在就是这个情况：同仓库分支的 PR 会直接部署上线）
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 读取仓库内容
+        uses: actions/checkout@v4
+
+      - name: 设置go版本
+        uses: actions/setup-go@v5
+        with:
+          # 跟着 go.mod 走，而不是写死版本号（call-back 写的是 '1.23'）。
+          # 写死的话 go.mod 一升级，本地能编、CI 才报错，而且报的是
+          # "不认识的语法"这种绕的错
+          go-version-file: go.mod
+
+      - name: 更新go依赖
+        run: pwd && go mod download
+
+      - name: 编译go程序
+        # 显式关掉 cgo：测试用的 sqlite 驱动只有测试代码引用，生产二进制连的是
+        # MySQL。关掉才能出静态二进制 —— 否则编出来的东西依赖 runner 的 glibc
+        # 版本，换台服务器就是"能上传、起不来"这种最难查的失败。
+        # -trimpath 去掉构建机上的绝对路径
+        env:
+          CGO_ENABLED: '0'
+        run: pwd && go build -trimpath -o call_auth ./main.go
+
+      - name: 上传执行文件
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          source: "./call_auth"
+          target: "/www/wwwroot/call-auth"
+
+      - name: 部署
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          debug: true
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          script: systemctl restart call_auth

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"log"
 	"net/http"
 
@@ -10,6 +11,7 @@ import (
 	"call-auth/routes"
 	"call-auth/services"
 	"call-auth/utils"
+	"call-auth/web"
 )
 
 func main() {
@@ -39,6 +41,12 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware())
+
+	// 登录页。必须住在认证中心自己域名下 —— 跨域时前端 JS 无法为别的域写
+	// cookie，能种下 auth 域会话 cookie 的只有 auth 域自己（§4.5）
+	tmpl := template.Must(template.ParseFS(web.Templates, "templates/*.html"))
+	r.SetHTMLTemplate(tmpl)
+
 	routes.SetupRoutes(r, tokens)
 
 	if len(config.AppConfig.CORSOrigins) == 0 {
@@ -53,9 +61,12 @@ func main() {
 	}
 }
 
-// corsMiddleware 手写而不是引 gin-contrib/cors：规则很简单，
-// 而且有一个点必须自己控制 —— AllowCredentials 为 true 时**不能**回 "*"，
-// 浏览器会直接拒绝这个响应。所以这里只在 Origin 命中白名单时回显它
+// corsMiddleware 手写而不是引 gin-contrib/cors：规则很简单。
+//
+// **刻意不回 Access-Control-Allow-Credentials**：登录页搬到认证中心之后，
+// 认证域的 cookie 只在顶层导航（GET /sso）和同源表单（POST /login）里用，
+// 这两处都不经过 CORS；唯一跨域的 POST /auth/ticket 用票据自证、不读 cookie。
+// 所以没有任何一处需要带凭据 —— 不开这个头本身就是一层收紧（§9.3）
 func corsMiddleware() gin.HandlerFunc {
 	allowed := make(map[string]bool, len(config.AppConfig.CORSOrigins))
 	for _, origin := range config.AppConfig.CORSOrigins {
@@ -66,7 +77,6 @@ func corsMiddleware() gin.HandlerFunc {
 		origin := ctx.GetHeader("Origin")
 		if origin != "" && allowed[origin] {
 			ctx.Header("Access-Control-Allow-Origin", origin)
-			ctx.Header("Access-Control-Allow-Credentials", "true")
 			// Vary 必须带上 Origin：否则 CDN/代理会把 A 站点的响应
 			// 缓存下来发给 B 站点，把 CORS 头带错
 			ctx.Header("Vary", "Origin")

@@ -41,6 +41,14 @@ type UserInfo struct {
 	Role string `json:"role"`
 }
 
+// TicketRequest 用一次性票据换令牌（§6.8）。
+//
+// client_id 必填且必须与签发票据时一致 —— 否则 A 应用能拿 B 应用的票换 token
+type TicketRequest struct {
+	Ticket   string `json:"ticket" binding:"required"`
+	ClientID string `json:"client_id" binding:"required"`
+}
+
 // TokenResponse 登录/注册/刷新统一返回这个结构
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`

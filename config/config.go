@@ -44,6 +44,20 @@ type Config struct {
 	// LeewaySeconds 时钟偏差容忍，默认 60 秒
 	LeewaySeconds int
 
+	// ---------- 跨应用 SSO ----------
+	// SSOTicketTTLSeconds 一次性票据有效期，默认 60 秒。
+	// 短是关键：票据要穿过浏览器地址栏和浏览历史，窗口越短越安全（§4.5）
+	SSOTicketTTLSeconds int
+	// SSOSessionTTLSeconds 认证中心域下会话 cookie 的有效期，默认 30 天。
+	// 它是「一段时间内不用重复登录」的来源，也是泄露代价最高的一份凭据
+	SSOSessionTTLSeconds int
+	// CookieSecure SSO 会话 cookie 是否带 Secure 属性。
+	//
+	// **必须可配，不能硬编码**：硬编码 true 时本机 http://localhost:8020 存不进
+	// cookie → /sso 永远读不到会话 → 死循环跳登录页；硬编码 false 时线上那个
+	// 30 天的会话就是明文可嗅探。生产由 Caddy 挡在前面 → true（§6.2.1、§10.2）
+	CookieSecure bool
+
 	// ---------- CORS ----------
 	CORSOrigins []string
 }
@@ -90,6 +104,10 @@ func LoadConfig() error {
 		AccessTokenTTLSeconds:  GetEnvInt("ACCESS_TOKEN_TTL_SECONDS", 900),
 		RefreshTokenTTLSeconds: GetEnvInt("REFRESH_TOKEN_TTL_SECONDS", 14*24*3600),
 		LeewaySeconds:          GetEnvInt("JWT_LEEWAY_SECONDS", 60),
+
+		SSOTicketTTLSeconds:  GetEnvInt("SSO_TICKET_TTL_SECONDS", 60),
+		SSOSessionTTLSeconds: GetEnvInt("SSO_SESSION_TTL_SECONDS", 30*24*3600),
+		CookieSecure:         GetEnvBool("COOKIE_SECURE", false),
 
 		CORSOrigins: splitAndTrim(GetEnv("CORS_ORIGINS", "")),
 	}
@@ -198,6 +216,24 @@ func GetEnvInt(key string, defaultValue int) int {
 	value, err := strconv.Atoi(raw)
 	if err != nil {
 		log.Printf("Warning: %s=%q 不是合法整数，使用默认值 %d", key, raw, defaultValue)
+		return defaultValue
+	}
+	return value
+}
+
+// GetEnvBool 读布尔配置。只认 strconv.ParseBool 接受的字面量
+// （1/t/T/TRUE/true/True/0/f/F/FALSE/false/False）。
+//
+// 不用"非空即真"那种宽松判断：COOKIE_SECURE=false 会被当成真，
+// 而这种错误恰好是本项目最不能容忍的一类 —— 它让线上以为开了 Secure、实际没开
+func GetEnvBool(key string, defaultValue bool) bool {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Printf("Warning: %s=%q 不是合法布尔值，使用默认值 %t", key, raw, defaultValue)
 		return defaultValue
 	}
 	return value

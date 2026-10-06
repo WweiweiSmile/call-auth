@@ -31,7 +31,12 @@ func setupTest(t *testing.T) *TokenService {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.RefreshToken{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.RefreshToken{},
+		&models.SSOClient{},
+		&models.SSOTicket{},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -42,6 +47,9 @@ func setupTest(t *testing.T) *TokenService {
 		AccessTokenTTLSeconds:  900,
 		RefreshTokenTTLSeconds: 14 * 24 * 3600,
 		LeewaySeconds:          60,
+		SSOTicketTTLSeconds:    60,
+		SSOSessionTTLSeconds:   30 * 24 * 3600,
+		CookieSecure:           false, // 测试跑在 http 上，与 dev 一致
 	}
 
 	keys, err := utils.LoadOrCreateKeyPair(filepath.Join(t.TempDir(), "private.pem"))

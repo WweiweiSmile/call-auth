@@ -21,13 +21,13 @@ const (
 //
 // 约定：**只有认证中心能写这张表**。call-back 侧应删掉所有写入代码
 type User struct {
-	ID        uint   `json:"id" gorm:"primaryKey"`
-	Username  string `json:"username" gorm:"size:100;uniqueIndex;not null;comment:用户名"`
-	Nickname  string `json:"nickname" gorm:"size:100;comment:昵称"`
-	Avatar    string `json:"avatar" gorm:"size:500;comment:头像URL"`
-	Password  string `json:"-" gorm:"size:255;not null;comment:密码"`
-	Status    string `json:"status" gorm:"size:20;default:'active';comment:状态: active-正常, inactive-禁用"`
-	Role      string `json:"role" gorm:"size:20;not null;default:'user';comment:角色: user-普通用户, admin-系统管理"`
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	Username  string         `json:"username" gorm:"size:100;uniqueIndex;not null;comment:用户名"`
+	Nickname  string         `json:"nickname" gorm:"size:100;comment:昵称"`
+	Avatar    string         `json:"avatar" gorm:"size:500;comment:头像URL"`
+	Password  string         `json:"-" gorm:"size:255;not null;comment:密码"`
+	Status    string         `json:"status" gorm:"size:20;default:'active';comment:状态: active-正常, inactive-禁用"`
+	Role      string         `json:"role" gorm:"size:20;not null;default:'user';comment:角色: user-普通用户, admin-系统管理"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`

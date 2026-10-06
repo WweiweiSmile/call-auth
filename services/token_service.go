@@ -45,6 +45,7 @@ func (s *TokenService) Issue(user *models.User, clientID string) (*dto.TokenResp
 		UserID:    user.ID,
 		TokenHash: hash,
 		ClientID:  clientID,
+		Scope:     models.ScopeApp,
 		ExpiresAt: time.Now().Add(time.Duration(config.AppConfig.RefreshTokenTTLSeconds) * time.Second),
 	}
 	if err := config.DB.Create(&row).Error; err != nil {
@@ -60,10 +61,46 @@ func (s *TokenService) Issue(user *models.User, clientID string) (*dto.TokenResp
 	}, nil
 }
 
+// IssueSSOSession 建一个浏览器会话（scope='sso'），供登录页种进 cookie。
+//
+// 与 Issue 的两处区别都是刻意的：
+//
+//  1. **不签发 access token**。这份凭据的唯一用途是在 /sso 换一次性票据，
+//     它每次请求都会被浏览器自动带上，不该同时是个能直接调业务接口的东西
+//  2. 有效期长得多（默认 30 天）。它才是"一段时间内不用重复登录"的来源，
+//     所以它也是泄露代价最高的一份凭据 —— 见 §9.4
+//
+// 只返回明文，库里存 sha256；明文只出现在 Set-Cookie 那一次
+func (s *TokenService) IssueSSOSession(user *models.User) (string, error) {
+	plain, hash := utils.NewOpaqueToken()
+	row := models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: hash,
+		ClientID:  "", // 会话属于认证中心，不属于任何一个应用
+		Scope:     models.ScopeSSO,
+		ExpiresAt: time.Now().Add(time.Duration(config.AppConfig.SSOSessionTTLSeconds) * time.Second),
+	}
+	if err := config.DB.Create(&row).Error; err != nil {
+		return "", err
+	}
+	return plain, nil
+}
+
 // Refresh 用 refresh token 换一对新令牌（轮换）。
 func (s *TokenService) Refresh(plain string) (*dto.TokenResponse, error) {
 	var row models.RefreshToken
 	if err := config.DB.Where("token_hash = ?", utils.HashToken(plain)).First(&row).Error; err != nil {
+		return nil, ErrTokenInvalid
+	}
+
+	// SSO 会话不能拿来换 access token，直接拒。
+	//
+	// **必须放在下面那个"占用"之前**：SSO 会话是长期凭据、设计上会被反复读取
+	//（每次访问 /sso 都读一遍）。一旦被 refresh 轮换掉，cookie 里那份就成了
+	// "已用过的旧 token" —— 之后任何一次 /sso 都会撞上重放检测，把用户**全部**
+	// 登录态吊销，而现象上只是"莫名其妙被登出所有设备"，极难定位
+	if row.Scope == models.ScopeSSO {
+		log.Printf("Warning: SSO 会话被用于 /auth/refresh user=%d", row.UserID)
 		return nil, ErrTokenInvalid
 	}
 
@@ -128,12 +165,15 @@ func (s *TokenService) UserOf(plain string) (uint, error) {
 
 // Logout 登出。
 //
-// plain 为空表示"登出所有设备"：吊销该用户的全部 refresh token。
+// plain 为空表示"登出该应用的全部登录态"：**只吊销 app 类**。
+// 刻意不碰 scope='sso' 的浏览器会话（§6.4）—— 否则用户在 A 应用登出会把
+// B 应用一起踢掉，那不是登出，是全局下线。真要全局下线得另开一个接口。
+//
 // 注意登出**不影响** access token —— 它无状态，最长还能用到过期（15 分钟）。
 // 这是本方案明确接受的窗口，见设计文档 §4.3
 func (s *TokenService) Logout(userID uint, plain string) error {
 	if plain == "" {
-		s.RevokeAll(userID)
+		s.RevokeAppSessions(userID)
 		return nil
 	}
 	return config.DB.Model(&models.RefreshToken{}).
@@ -141,12 +181,25 @@ func (s *TokenService) Logout(userID uint, plain string) error {
 		Update("revoked_at", time.Now()).Error
 }
 
-// RevokeAll 吊销某用户的全部登录态。登出所有设备、检测到重放、账号被禁用时调用
+// RevokeAll 吊销某用户的**全部**登录态，含浏览器会话。
+//
+// 只给安全事件用：检测到重放、账号被禁用。这类场景下"宁可多杀"——
+// 会话被留下意味着攻击者仍然能靠它换出任意应用的 token
 func (s *TokenService) RevokeAll(userID uint) {
 	if err := config.DB.Model(&models.RefreshToken{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID).
 		Update("revoked_at", time.Now()).Error; err != nil {
 		log.Printf("Warning: 吊销 user=%d 的登录态失败: %v", userID, err)
+	}
+}
+
+// RevokeAppSessions 只吊销应用持有的登录态，保留浏览器会话。
+// 用户主动"登出"走它（§6.4）
+func (s *TokenService) RevokeAppSessions(userID uint) {
+	if err := config.DB.Model(&models.RefreshToken{}).
+		Where("user_id = ? AND scope = ? AND revoked_at IS NULL", userID, models.ScopeApp).
+		Update("revoked_at", time.Now()).Error; err != nil {
+		log.Printf("Warning: 吊销 user=%d 的应用登录态失败: %v", userID, err)
 	}
 }
 

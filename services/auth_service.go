@@ -64,6 +64,16 @@ func getDummyHash() []byte {
 
 // Register 注册并直接签发了登录态（注册完不用再登一次）
 func (s *AuthService) Register(req *dto.RegisterRequest) (*dto.TokenResponse, error) {
+	user, err := s.RegisterUser(req)
+	if err != nil {
+		return nil, err
+	}
+	return s.tokens.Issue(user, "")
+}
+
+// RegisterUser 创建用户。**不签发任何令牌** —— 与 Authenticate 同样的理由：
+// 登录页的表单注册要的是浏览器会话，而 /auth/register 要的是应用登录态
+func (s *AuthService) RegisterUser(req *dto.RegisterRequest) (*models.User, error) {
 	username := strings.TrimSpace(req.Username)
 	if utf8.RuneCountInString(username) < minUsernameLen {
 		return nil, fmt.Errorf("%w：至少 %d 个字符", ErrInvalidUsername, minUsernameLen)
@@ -104,13 +114,16 @@ func (s *AuthService) Register(req *dto.RegisterRequest) (*dto.TokenResponse, er
 		return nil, err
 	}
 
-	return s.tokens.Issue(&user, "")
+	return &user, nil
 }
 
-// Login 校验用户名密码并签发登录态
-func (s *AuthService) Login(req *dto.LoginRequest) (*dto.TokenResponse, error) {
+// Authenticate 校验用户名密码，返回用户。**不签发任何令牌**。
+//
+// /auth/login（JSON 接口）和登录页的表单提交共用它 —— 两者的区别只在拿到
+// 用户之后签发什么：前者签应用登录态，后者签浏览器会话（§6.2.1）
+func (s *AuthService) Authenticate(username, password string) (*models.User, error) {
 	var user models.User
-	err := config.DB.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error
+	err := config.DB.Where("username = ?", strings.TrimSpace(username)).First(&user).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// **关键**：用户不存在时也要跑一次 bcrypt 比对。
@@ -118,14 +131,14 @@ func (s *AuthService) Login(req *dto.LoginRequest) (*dto.TokenResponse, error) {
 		// 不跑的话，这条路径比"密码错误"快得多（bcrypt 是故意设计的慢），
 		// 攻击者就能靠响应时间筛出哪些用户名真实存在。
 		// 拿一个固定的占位 hash 比对，两条路径耗时一致
-		_ = bcrypt.CompareHashAndPassword(getDummyHash(), []byte(req.Password))
+		_ = bcrypt.CompareHashAndPassword(getDummyHash(), []byte(password))
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	if !user.CheckPassword(req.Password) {
+	if !user.CheckPassword(password) {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -136,7 +149,16 @@ func (s *AuthService) Login(req *dto.LoginRequest) (*dto.TokenResponse, error) {
 		return nil, ErrAccountDisabled
 	}
 
-	return s.tokens.Issue(&user, strings.TrimSpace(req.ClientID))
+	return &user, nil
+}
+
+// Login 校验用户名密码并签发应用登录态
+func (s *AuthService) Login(req *dto.LoginRequest) (*dto.TokenResponse, error) {
+	user, err := s.Authenticate(req.Username, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	return s.tokens.Issue(user, strings.TrimSpace(req.ClientID))
 }
 
 // GetUser 取用户信息。供 /auth/me 使用

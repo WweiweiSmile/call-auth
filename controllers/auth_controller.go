@@ -119,7 +119,7 @@ func (c *AuthController) Me(ctx *gin.Context) {
 //
 // **无需认证** —— 它的内容本来就是公开的，验签方要拿它来验我们的签名。
 // 用标准 JWKS 格式是为了让各语言的 JWT 库能直接消费
-//（Go 的 keyfunc、Python 的 PyJWKClient 都认这个格式）
+// （Go 的 keyfunc、Python 的 PyJWKClient 都认这个格式）
 func (c *AuthController) JWKS(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"keys": c.tokens.Keys().JWKS()})
 }
@@ -148,6 +148,12 @@ func respondError(ctx *gin.Context, err error) {
 		status, reason, message = http.StatusConflict, "username_taken", err.Error()
 	case errors.Is(err, services.ErrInvalidUsername), errors.Is(err, services.ErrWeakPassword):
 		status, reason, message = http.StatusBadRequest, "invalid_input", err.Error()
+	case errors.Is(err, services.ErrInvalidSSORequest):
+		status, reason, message = http.StatusBadRequest, "invalid_request", err.Error()
+	case errors.Is(err, services.ErrSSOSessionInvalid):
+		status, reason, message = http.StatusUnauthorized, "sso_session_invalid", err.Error()
+	case errors.Is(err, services.ErrInvalidTicket):
+		status, reason, message = http.StatusBadRequest, "invalid_ticket", err.Error()
 	}
 
 	if status == http.StatusInternalServerError {

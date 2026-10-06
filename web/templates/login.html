@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>{{if .Register}}注册{{else}}登录{{end}} · Call 游戏管理</title>
+<style>
+  :root {
+    --brand: #e64340;
+    --brand-dark: #c93a37;
+    --ink: #1d2129;
+    --muted: #86909c;
+    --line: #e5e6eb;
+    --bg: #f8f9fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 24px 24px;
+    box-shadow: 0 8px 32px rgba(29, 33, 41, .08);
+  }
+  .logo { font-size: 40px; line-height: 1; text-align: center; }
+  h1 { margin: 12px 0 4px; font-size: 20px; font-weight: 600; text-align: center; }
+  .sub { margin: 0 0 24px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+  .tabs a {
+    flex: 1;
+    padding: 10px 0;
+    text-align: center;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 15px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tabs a.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+
+  .error {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fef0f0;
+    color: var(--brand-dark);
+    font-size: 13px;
+  }
+
+  label { display: block; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+  input {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 11px 12px;
+    font-size: 15px;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    outline: none;
+    /* 16px 以下 iOS 会自动放大页面，这里不设 font-size 就要加这个 */
+    appearance: none;
+  }
+  input:focus { border-color: var(--brand); }
+
+  button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--brand);
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:active { background: var(--brand-dark); }
+
+  .foot { margin: 18px 0 0; text-align: center; font-size: 13px; color: var(--muted); }
+  .foot a { color: var(--brand); text-decoration: none; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo">🎮</div>
+    <h1>Call 游戏管理</h1>
+    <p class="sub">{{if .Register}}创建新账户{{else}}欢迎回来{{end}}</p>
+
+    <nav class="tabs">
+      <a class="{{if not .Register}}active{{end}}" href="/login?next={{.Next | urlquery}}">登录</a>
+      <a class="{{if .Register}}active{{end}}" href="/login?next={{.Next | urlquery}}&amp;mode=register">注册</a>
+    </nav>
+
+    {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+    <form method="post" action="{{if .Register}}/register{{else}}/login{{end}}">
+      <!-- next 原样带回：登录成功后 302 回 /sso，由它发票据（不是直接回应用） -->
+      <input type="hidden" name="next" value="{{.Next}}" />
+
+      <label>用户名
+        <input name="username" value="{{.Username}}" autocomplete="username"
+               required minlength="3" maxlength="100" />
+      </label>
+
+      {{if .Register}}
+      <label>昵称（可选）
+        <input name="nickname" autocomplete="nickname" maxlength="100" />
+      </label>
+      {{end}}
+
+      <label>密码
+        <input type="password" name="password"
+               autocomplete="{{if .Register}}new-password{{else}}current-password{{end}}"
+               required {{if .Register}}minlength="8"{{end}} />
+      </label>
+
+      <button type="submit">{{if .Register}}注册{{else}}登录{{end}}</button>
+    </form>
+
+    <p class="foot">
+      {{if .Register}}
+        已有账户？<a href="/login?next={{.Next | urlquery}}">去登录</a>
+      {{else}}
+        没有账户？<a href="/login?next={{.Next | urlquery}}&amp;mode=register">去注册</a>
+      {{end}}
+    </p>
+  </main>
+</body>
+</html>

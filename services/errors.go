@@ -37,4 +37,20 @@ var (
 	// 单独给它一个错误，是为了让前端能提示"检测到异常登录，请重新登录"，
 	// 而不是笼统地说"登录态失效"
 	ErrTokenReuse = errors.New("检测到令牌重复使用，已注销全部登录态以保护账号")
+
+	// ErrInvalidSSORequest /sso 的参数校验不通过：client_id 不存在 / 已停用，
+	// 或 redirect_uri 不在白名单里。
+	//
+	// **刻意只有这一个笼统的错误**：区分"client 不存在"和"redirect_uri 不合法"，
+	// 等于给攻击者一个探测哪些 client_id 真实存在的接口（§6.7）。
+	// 调用方拿到它只能回一个不带任何跳转的 400
+	ErrInvalidSSORequest = errors.New("请求参数错误")
+
+	// ErrSSOSessionInvalid SSO 会话不存在 / 已过期 / 已吊销。
+	//
+	// 「从没登录过」走的也是它 —— 对 /sso 来说那不是异常，只是该去登录页了
+	ErrSSOSessionInvalid = errors.New("SSO 会话已失效")
+
+	// ErrInvalidTicket 票据无效 / 已兑换 / 已过期 / client_id 对不上（§6.8）
+	ErrInvalidTicket = errors.New("票据无效或已过期")
 )
