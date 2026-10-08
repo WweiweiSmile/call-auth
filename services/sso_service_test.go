@@ -58,12 +58,28 @@ func TestResolveClient(t *testing.T) {
 		{"已停用的 client 也拒", "disabled", "", "", true},
 		{"client_id 为空拒", "", "", "", true},
 		{"不传 redirect_uri 用登记的第一个", "app", "", "https://a.qwnet.top/auth/callback", false},
+
+		// 第一条规则：逐字相等
 		{"精确匹配放行", "app", "https://app.qwnet.top/auth/callback", "https://app.qwnet.top/auth/callback", false},
-		{"不在白名单的地址拒掉", "app", "https://evil.com/auth/callback", "", true},
+		{"hash 形态的地址要能原样匹配", "hash-app", "https://h.qwnet.top/#/pages/auth/callback", "https://h.qwnet.top/#/pages/auth/callback", false},
+
+		// 第二条规则：同源放行（scheme+host 精确相等，路径自由）。
+		// 这是为了让调用方能把"用户当时所在的那一页"作为落点 —— 登录完直接回那一页
+		{"同源任意路径放行", "app", "https://app.qwnet.top/pages/book/index", "https://app.qwnet.top/pages/book/index", false},
+		{"同源带查询串放行", "app", "https://app.qwnet.top/pages/book/index?gameId=1", "https://app.qwnet.top/pages/book/index?gameId=1", false},
+		{"同源根路径放行", "app", "https://app.qwnet.top/", "https://app.qwnet.top/", false},
+		{"原来拒掉的那条同源路径现在放行", "hash-app", "https://h.qwnet.top/auth/callback", "https://h.qwnet.top/auth/callback", false},
+
+		// ⚠️ 下面这些是同源放行这条规则的红线看门狗。
+		// 谁要是把实现改成 strings.HasPrefix，前两条立刻会红
+		{"异源拒掉", "app", "https://evil.com/auth/callback", "", true},
 		// 前缀相同、多一段后缀 —— 这正是"用 HasPrefix 实现"会漏掉的那个绕过
 		{"前缀相同但域名更长不能放行", "app", "https://a.qwnet.top.evil.com/auth/callback", "", true},
-		{"hash 形态的地址要能原样匹配", "hash-app", "https://h.qwnet.top/#/pages/auth/callback", "https://h.qwnet.top/#/pages/auth/callback", false},
-		{"少了 #/pages 一段就拒", "hash-app", "https://h.qwnet.top/auth/callback", "", true},
+		// @ 前会被 url.Parse 当成 userinfo，真正的 host 是 evil.com
+		{"userinfo 伪装拒掉", "app", "https://app.qwnet.top@evil.com/pages/book/index", "", true},
+		{"同源但端口不同拒掉", "app", "https://app.qwnet.top:8443/pages/book/index", "", true},
+		{"同源但 scheme 不同拒掉", "app", "http://app.qwnet.top/pages/book/index", "", true},
+		{"相对地址拒掉", "app", "/pages/book/index", "", true},
 	}
 
 	for _, tc := range cases {

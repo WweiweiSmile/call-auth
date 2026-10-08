@@ -148,11 +148,13 @@ func (s *SSOService) ConsumeTicket(plain, clientID string) (*models.User, error)
 
 // CallbackURL 拼出带票据的回调地址。
 //
-// ⚠️ 这里是**纯字符串追加**，刻意不走 url.Parse：hash 模式的回调地址长这样
-// `https://call.qwnet.top/#/pages/auth/callback` —— 参数必须拼在 `#` 之后，
-// 成为 fragment 的一部分（浏览器不会把它发给服务端，顺带不进访问日志）。
-// 用 url.Parse 再改 RawQuery 会把 `#/pages/...` 当成 fragment 直接丢掉，
-// 跳转就废了
+// ⚠️ 这里是**纯字符串追加**，刻意不走 url.Parse：用 url.Parse 再改 RawQuery
+// 会把地址里的 `#` 当成 fragment 直接丢掉，跳转就废了。
+//
+// 现在两个前端都是 history 模式，地址形如 `https://call.qwnet.top/pages/book/index`，
+// 参数拼在真正的 query 上；若目标页自己带查询串（`?gameId=1`）则改用 `&` 续接。
+// 保留纯字符串追加的写法，是为了让老登记项里那种 hash 形态的地址
+// （`...#/pages/...`）仍然拼得出正确结果 —— 那种形态下参数必须落在 `#` 之后
 func CallbackURL(redirectURI, ticket, state string) string {
 	sep := "?"
 	if strings.Contains(redirectURI, "?") {
