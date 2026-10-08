@@ -125,14 +125,14 @@ var DefaultSSOClients = []SSOClient{
 		ClientID: "call-front",
 		Name:     "Call 游戏管理",
 		RedirectURIs: `["http://localhost:3000",` +
-			`"https://call.qwnet.top"]`,
+			`"http://call.qwnet.top"]`,
 		IsActive: true,
 	},
 	{
 		ClientID: "learn-daily",
 		Name:     "按天学",
 		RedirectURIs: `["http://localhost:3010",` +
-			`"https://learn.qwnet.top"]`,
+			`"http://learn.qwnet.top"]`,
 		IsActive: true,
 	},
 }
